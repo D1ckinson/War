@@ -1,15 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-//Есть 2 взвода. 1 взвод страны один, 2 взвод страны два.
-//Каждый взвод внутри имеет солдат.
-//Нужно написать программу, которая будет моделировать бой этих взводов.
-//Каждый боец - это уникальная единица, он может иметь уникальные способности или же уникальные характеристики, такие как повышенная сила.
-//Побеждает та страна, во взводе которой остались выжившие бойцы.
-//Не важно, какой будет бой, рукопашный, стрелковый.
 
 namespace Война
 {
@@ -24,68 +15,259 @@ namespace Война
         }
     }
 
-    class Soldier : IComparable<Soldier>
+    class Soldier
     {
-        private int _health;
         private int _damage;
+        private int _currentHealth;
+        private int _maxHealth;
 
-        public Soldier(int health, int damage)
+        public Soldier(int health, int damage, int attackRange)
         {
-            _health = health;
+            _maxHealth = health;
+            _currentHealth = health;
             _damage = damage;
+            AttackRange = attackRange;
         }
 
-        public bool IsAlive => _health > 0;
+        public int AttackRange { get; private set; }
+        public bool IsAlive => _currentHealth > 0;
+        public bool IsHealthFull => _currentHealth == _maxHealth;
 
-        public int Attack() => _damage;//урон сделать свойством?
+        public virtual void Attack(Soldier enemy) =>
+            enemy.TakeDamage(_damage);
 
-        public void TakeDamage(int damage) => _health -= damage;
+        public void GetTreatment(int healValue)
+        {
+            _currentHealth += healValue;
 
-        public int CompareTo(Soldier soldier) => IsAlive.CompareTo(soldier.IsAlive);
+            if (_currentHealth > _maxHealth)
+                _currentHealth = _maxHealth;
+        }
+
+        public void TakeDamage(int damage) =>
+            _currentHealth -= damage;
+
+        public int Aim(List<int> targetIndexes) =>
+            targetIndexes[RandomUtility.Next(targetIndexes.Count)];
+    }
+
+    class Medic : Soldier
+    {
+        public readonly int healRange = 1;
+        private int _valueOfHeal;
+
+        public Medic(int health, int damage, int attackRange, int valueOfHeal) : base(health, damage, attackRange) =>
+            _valueOfHeal = valueOfHeal;
+
+        public void Heal(Soldier soldier) =>
+            soldier.GetTreatment(_valueOfHeal);
+    }
+
+    class Grenadier : Soldier
+    {
+        public readonly int grenadeAttackRange = 1;
+        private int _grenadeDamage = 30;
+        private int _grenadeCooldown = 3;
+        private int _grenadeCooldownCounter = 0;
+
+        public Grenadier(int health, int damage, int attackRange) : base(health, damage, attackRange) { }
+
+        public bool IsGrenadeAttackReady => _grenadeCooldownCounter == _grenadeCooldown;
+
+        public void GrenadeAttack(List<Soldier> enemies)
+        {
+            enemies.ForEach(enemy => enemy.TakeDamage(_grenadeDamage));
+
+            _grenadeCooldownCounter = 0;
+        }
+
+        public override void Attack(Soldier soldier)
+        {
+            base.Attack(soldier);
+
+            _grenadeCooldownCounter++;
+        }
     }
 
     class SoldierFabric
     {
-        private int _minHealth = 80;
-        private int _maxHealth = 100;
-        private int _minDamage = 10;
-        private int _maxDamage = 20;
+        private int[] _healthStats = { 80, 100 };
+        private int[] _damageStats = { 15, 20 };
+        private int[] _attackRangeStats = { 1, 3 };
+        private int[] _healStats = { 10, 15 };
 
-        public Soldier Create() => new Soldier(RandomUtility.Next(_minHealth, _maxHealth), RandomUtility.Next(_minDamage, _maxDamage));
+        public Soldier CreateSoldier() => new Soldier(
+            RandomUtility.Next(_healthStats),
+            RandomUtility.Next(_damageStats),
+            RandomUtility.Next(_attackRangeStats));
+
+        public Medic CreateMedic() => new Medic(
+            RandomUtility.Next(_healthStats),
+            RandomUtility.Next(_damageStats),
+            RandomUtility.Next(_attackRangeStats),
+            RandomUtility.Next(_healStats));
+
+        public Grenadier CreateGrenadier() => new Grenadier(
+            RandomUtility.Next(_healthStats),
+            RandomUtility.Next(_damageStats),
+            RandomUtility.Next(_attackRangeStats));
     }
 
     class Squad
     {
-        private Soldier[] _soldiers;
+        private List<Soldier> _soldiers;
 
-        public Squad(Soldier[] soldiers) => _soldiers = soldiers;
+        public Squad(List<Soldier> soldiers) =>
+            _soldiers = soldiers;
 
+        public int Size => _soldiers.Count;
         public bool IsAlive => _soldiers.Any(soldier => soldier.IsAlive);
 
-        public void Attack(Squad squad)
+        public void Attack(Squad enemiesSquad)
         {
-            Array.Sort(_soldiers);
+            for (int i = 0; i < _soldiers.Count; i++)
+            {
+                List<int> targetsIndexes;
 
-            for (int i = 0; i < _soldiers.Length; i++)
-                squad.TakeDamage(i, _soldiers[i].Attack());
+                if (_soldiers[i] is Medic medic)
+                {
+                    targetsIndexes = GiveMedicTargets(i, medic.healRange);
+
+                    if (targetsIndexes.Any())
+                    {
+                        int targetIndex = medic.Aim(targetsIndexes);
+
+                        medic.Heal(_soldiers[targetIndex]);
+                    }
+                }
+
+                if (_soldiers[i] is Grenadier grenadier && grenadier.IsGrenadeAttackReady)
+                {
+                    List<Soldier> enemies = GiveGrenadierTargets(i, grenadier.AttackRange, enemiesSquad);
+
+                    grenadier.GrenadeAttack(enemies);
+                }
+
+                targetsIndexes = GiveSoldierTargets(_soldiers[i], enemiesSquad, i);
+
+                if (targetsIndexes.Any())
+                {
+                    int enemyIndex = _soldiers[i].Aim(targetsIndexes);
+
+                    Soldier enemy = enemiesSquad.GiveSoldierByIndex(enemyIndex);
+
+                    _soldiers[i].Attack(enemy);
+                }
+            }
         }
 
-        public void TakeDamage(int index, int damage) => _soldiers[index].TakeDamage(damage);
+        public void RemoveDead() =>
+            _soldiers.FindAll(soldier => soldier.IsAlive == false).ForEach(soldier => _soldiers.Remove(soldier));
+
+        private bool IsSoldierByIndexAlive(int index) =>
+            _soldiers[index].IsAlive;
+
+        private Soldier GiveSoldierByIndex(int index) =>
+            _soldiers[index];
+
+        private List<int> GiveSoldierTargets(Soldier soldier, Squad enemiesSquad, int soldierIndex)
+        {
+            List<int> enemiesIndexes = new List<int>();
+
+            int[] indexRange = CreateIndexRange(soldierIndex, soldier.AttackRange, enemiesSquad.Size);
+
+            for (int i = indexRange[0]; i < indexRange[1]; i++)
+                if (enemiesSquad.IsSoldierByIndexAlive(i))
+                    enemiesIndexes.Add(i);
+
+            return enemiesIndexes;
+        }
+
+        private List<int> GiveMedicTargets(int medicIndex, int healRange)
+        {
+            List<int> targetsIndexes = new List<int>();
+
+            int[] indexRange = CreateIndexRange(medicIndex, healRange, _soldiers.Count);
+
+            for (int i = indexRange[0]; i < indexRange[1]; i++)
+                if (_soldiers[i].IsHealthFull == false)
+                    targetsIndexes.Add(i);
+
+            return targetsIndexes;
+        }
+
+        private List<Soldier> GiveGrenadierTargets(int grenadierIndex, int grenadeAttackRange, Squad enemiesSquad)
+        {
+            List<Soldier> enemies = new List<Soldier>();
+
+            int[] indexRange = CreateIndexRange(grenadierIndex, grenadeAttackRange, enemiesSquad.Size);
+
+            for (int i = indexRange[0]; i < indexRange[1]; i++)
+                enemies.Add(enemiesSquad.GiveSoldierByIndex(i));
+
+            return enemies;
+        }
+
+        private int[] CreateIndexRange(int currentIndex, int range, int maxIndex)
+        {
+            int[] indexRange = new int[2];
+
+            int startIndex = currentIndex - range;
+            int lastIndex = currentIndex + range;
+
+            if (startIndex < 0)
+                startIndex = 0;
+
+            if (lastIndex > maxIndex)
+                lastIndex = maxIndex;
+
+            indexRange[0] = startIndex;
+            indexRange[1] = lastIndex;
+
+            return indexRange;
+        }
     }
 
     class Headquarters
     {
-        private int _squadSize = 30;
+        private int[] _squadSizeRange = { 25, 30 };
         private SoldierFabric _soldierFabric = new SoldierFabric();
+
+        private int _medicsQuantity = 5;
+        private int _grenadierQuantity = 5;
 
         public Squad CreateSquad()
         {
-            Soldier[] soldiers = new Soldier[_squadSize];
+            int squadSize = RandomUtility.Next(_squadSizeRange);
 
-            for (int i = 0; i < soldiers.Length; i++)
-                soldiers[i] = _soldierFabric.Create();
+            List<Soldier> soldiers = new List<Soldier>();
+
+            for (int i = 0; i < _medicsQuantity; i++)
+                soldiers.Add(_soldierFabric.CreateMedic());
+
+            for (int i = 0; i < _grenadierQuantity; i++)
+                soldiers.Add(_soldierFabric.CreateGrenadier());
+
+            for (int i = soldiers.Count; i < squadSize; i++)
+                soldiers.Add(_soldierFabric.CreateSoldier());
+
+            Shuffle(soldiers);
 
             return new Squad(soldiers);
+        }
+
+        private void Shuffle(List<Soldier> soldiers)
+        {
+            Soldier tempSoldier;
+
+            for (int i = 0; i < soldiers.Count; i++)
+            {
+                int index = RandomUtility.Next(soldiers.Count);
+
+                tempSoldier = soldiers[index];
+                soldiers[index] = soldiers[i];
+                soldiers[i] = tempSoldier;
+            }
         }
     }
 
@@ -106,10 +288,19 @@ namespace Война
             {
                 _squad1.Attack(_squad2);
                 _squad2.Attack(_squad1);
+
+                _squad1.RemoveDead();
+                _squad2.RemoveDead();
             }
 
-            Console.WriteLine(_squad1.IsAlive);
-            Console.WriteLine(_squad2.IsAlive);
+            if (_squad1.IsAlive == false && _squad2.IsAlive == false)
+                Console.WriteLine("Оба взвода пали.");
+            else if (_squad1.IsAlive)
+                Console.WriteLine("Победил первый взвод.");
+            else
+                Console.WriteLine("Победил второй взвод.");
+
+            Console.WriteLine("{0}\n{1}", _squad1.IsAlive, _squad2.IsAlive);
         }
     }
 
@@ -117,8 +308,10 @@ namespace Война
     {
         static private Random s_random = new Random();
 
-        static public int Next(int value) => s_random.Next(value);
+        static public int Next(int value) =>
+            s_random.Next(value);
 
-        static public int Next(int minValue, int maxValue) => s_random.Next(minValue, maxValue);
+        static public int Next(int[] valueRange) =>
+            s_random.Next(valueRange[0], valueRange[1] + 1);
     }
 }

@@ -299,8 +299,6 @@ namespace Война
                 Console.WriteLine("Победил первый взвод.");
             else
                 Console.WriteLine("Победил второй взвод.");
-
-            Console.WriteLine("{0}\n{1}", _squad1.IsAlive, _squad2.IsAlive);
         }
     }
 

@@ -293,6 +293,11 @@ namespace Война
                 _squad2.RemoveDead();
             }
 
+            WriteFightResult();
+        }
+
+        private void WriteFightResult()
+        {
             if (_squad1.IsAlive == false && _squad2.IsAlive == false)
                 Console.WriteLine("Оба взвода пали.");
             else if (_squad1.IsAlive)

@@ -51,7 +51,7 @@ namespace Война
         }
 
 
-        protected virtual int ChoseTarget(List<Soldier> soldiers) =>
+        protected int ChoseTarget(List<Soldier> soldiers) =>
             RandomUtility.GenerateRandomValue(soldiers.Count);
 
         public virtual Soldier Clone() =>
